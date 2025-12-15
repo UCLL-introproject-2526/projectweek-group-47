@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Assets (added by projectweek instructions)
+*.jpg
+*.jpeg
+*.png
+*.wav
+*.mp3
+*.ogg
+*.midi
+*.zip
+*.7z
+*.rar
