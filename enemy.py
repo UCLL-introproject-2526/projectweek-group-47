@@ -16,7 +16,7 @@ class Enemy:
         self.frame_index = 0
         self.health = 3
         self.max_health = 3
-        self.speed = 3
+        self.speed = 8
         self.is_attacking = False
 
     def update(self, hero_rect):

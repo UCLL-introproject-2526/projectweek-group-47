@@ -8,7 +8,7 @@ def run_game():
     WIDTH, HEIGHT = 800, 600
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     font = pygame.font.SysFont('Arial', 24, bold=True)
-    
+
     # Load Assets
     background = pygame.image.load("asssets/image/background.png")
     background = pygame.transform.scale(background, (WIDTH, HEIGHT))

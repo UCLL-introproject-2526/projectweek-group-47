@@ -4,7 +4,7 @@ class Bullet:
     def __init__(self, x, y):
         self.rect = pygame.Rect(x, y, 15, 5)
         self.speed = 7
-        self.color = (255, 255, 0)  # Yellow
+        self.color = (244,244,244)  # Yellow
 
     def update(self):
         # Move the bullet to the right
