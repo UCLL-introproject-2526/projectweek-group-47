@@ -63,8 +63,8 @@ class Enemy:
             self.speed = random.randint(5, 10)
         else:
             self.y = 410
-            self.health = 4
-            self.speed = 8
+            self.health = 3
+            self.speed = 4
 
     def draw(self, screen):
         # Draw glow effect for ghost
