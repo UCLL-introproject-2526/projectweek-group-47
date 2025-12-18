@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 
 class Enemy:
     def __init__(self, x, y, enemy_type="zombie"):
@@ -33,37 +34,63 @@ class Enemy:
         self.frame_index = 0
         self.health = 3 if enemy_type == "ghost" else 4
         self.max_health = self.health
-        self.speed = random.randint(5, 10) if enemy_type == "ghost" else 8
+        self.speed = random.randint(2,4) if enemy_type == "ghost" else 6
         self.is_attacking = False
         self.score_value = 6 if enemy_type == "ghost" else 1
+        
+        # Fire shooting variables (for ghosts only)
+        self.fire_cooldown = 0
+        self.fire_rate = random.randint(120, 240)  # 2-4 seconds at 60 FPS
+        self.can_shoot_fire = random.random() < 0.1  # 1 in 6 chance (16.6%)
 
-    def update(self, hero_rect):
+    def update(self, hero_rect, hero_x=None, hero_y=None):
         enemy_rect = self.get_rect()
         
-        if self.enemy_type == "zombie" and enemy_rect.colliderect(hero_rect):
+        # Check if touching hero (both zombies and ghosts can attack by touching)
+        if enemy_rect.colliderect(hero_rect):
             self.is_attacking = True
         else:
             self.is_attacking = False
             self.x -= self.speed
-
         if self.enemy_type == "zombie":
             self.frame_index += 0.1
             if self.frame_index >= len(self.frames):
                 self.frame_index = 0
-            
         if self.x < -100:
             self.reset()
+            return None
+        shoot_signal = None
+        if (self.enemy_type == "ghost" and self.can_shoot_fire and 
+            self.fire_cooldown <= 0 and hero_x is not None and hero_y is not None):
+            distance_to_hero = math.sqrt((hero_x - self.x)**2 + (hero_y - self.y)**2)
+            
+            
+            if 200 < distance_to_hero < 500:
+                self.fire_cooldown = self.fire_rate
+                shoot_signal = "shoot_fire"  
+        
+        # Update fire cooldown
+        if self.fire_cooldown > 0:
+            self.fire_cooldown -= 1
+        
+        return shoot_signal
 
     def reset(self):
         self.x = random.randint(800, 1000)
         
         if self.enemy_type == "ghost":
+            # Reset ghost to random Y position
             self.y = random.randint(50, 350)
             self.health = 3
-            self.speed = random.randint(5, 10)
+            self.speed = random.randint(4,6)
+            # Keep fire shooting ability
+            if not self.can_shoot_fire:
+                # Small chance to gain fire ability when reset
+                self.can_shoot_fire = random.random() < 0.1  # 10% chance
         else:
+            # Reset zombie to ground position
             self.y = 410
-            self.health = 3
+            self.health = 4
             self.speed = 4
 
     def draw(self, screen):
@@ -100,6 +127,16 @@ class Enemy:
         score_font = pygame.font.SysFont('Arial', 12, bold=True)
         score_text = score_font.render(f"+{self.score_value}", True, (255, 255, 0))
         screen.blit(score_text, (self.x + 20, self.y - 25))
+        
+        # Draw fire ability indicator for ghosts that can shoot
+        if self.enemy_type == "ghost" and self.can_shoot_fire:
+            # Draw small fire icon near ghost
+            fire_radius = 4
+            fire_color = (255, 100, 0)  # Orange
+            pygame.draw.circle(screen, fire_color, 
+                             (int(self.x + 50), int(self.y - 15)), fire_radius)
+            pygame.draw.circle(screen, (255, 200, 0), 
+                             (int(self.x + 50), int(self.y - 15)), fire_radius - 2)
 
     def get_rect(self):
         if self.enemy_type == "ghost":
