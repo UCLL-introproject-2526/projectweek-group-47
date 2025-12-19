@@ -5,33 +5,77 @@ import random
 from enemy import Enemy
 from bullet import Bullet
 from ghost_fire import GhostFire
-from coins import Coin  # Import the Coin class
+from coins import Coin
+from health import Health
 
 def run_game():
     pygame.init()
     WIDTH, HEIGHT = 800, 600
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("47 Knights - Shooting Game")
-    font = pygame.font.SysFont('Press Start 2P', 20)
     
-    # Initialize pygame mixer for sounds
+    # Initialize fonts
+    def load_font(size, bold=False):
+        font_names = ['Pixelify Sans', 'Press Start 2P', 'Courier New', 'Arial']
+        for font_name in font_names:
+            try:
+                if bold and font_name != 'Press Start 2P':  
+                    return pygame.font.SysFont(font_name, size, bold=True)
+                return pygame.font.SysFont(font_name, size)
+            except:
+                continue
+        return pygame.font.Font(None, size)
+    
+  
+    title_font = load_font(48, bold=True)       
+    large_font = load_font(36, bold=True)       
+    normal_font = load_font(24)                 
+    small_font = load_font(18)                  
+    ui_font = load_font(20)                   
     pygame.mixer.init()
     
-    # Load Assets
+ 
     background = pygame.image.load("asssets/image/background.png")
     background = pygame.transform.scale(background, (WIDTH, HEIGHT))
+    
+    
+    try:
+       
+        hero_winner_img = pygame.image.load("asssets/image/hero_winner.png").convert_alpha()
+        # Scale to be large but leave room for text (about 60% of screen height)
+        winner_height = int(HEIGHT * 0.6)
+        winner_width = int(winner_height * (hero_winner_img.get_width() / hero_winner_img.get_height()))
+        hero_winner_img = pygame.transform.scale(hero_winner_img, (winner_width, winner_height))
+        
+        # Load dead image and scale to fill most of screen
+        hero_dead_img = pygame.image.load("asssets/image/hero_dead.png").convert_alpha()
+        # Scale to be large but leave room for text (about 60% of screen height)
+        dead_height = int(HEIGHT * 0.6)
+        dead_width = int(dead_height * (hero_dead_img.get_width() / hero_dead_img.get_height()))
+        hero_dead_img = pygame.transform.scale(hero_dead_img, (dead_width, dead_height))
+    except:
+        print("Warning: Win/Lose images not found! Using fallback graphics.")
+        # Create fallback images
+        hero_winner_img = pygame.Surface((400, 300))
+        hero_winner_img.fill((0, 100, 0))
+        pygame.draw.circle(hero_winner_img, (0, 255, 0), (200, 150), 100)
+        
+        hero_dead_img = pygame.Surface((400, 300))
+        hero_dead_img.fill((100, 0, 0))
+        pygame.draw.circle(hero_dead_img, (255, 0, 0), (200, 150), 100)
 
     # Load hero image for rotation
     hero_original = pygame.image.load("asssets/image/firing.png").convert_alpha()
     hero_original = pygame.transform.scale(hero_original, (100, 100))
     
-    # Load Sounds
     try:
         shoot_sound = pygame.mixer.Sound("asssets/sounds/firing_sounds.mp3")
         background_music = pygame.mixer.Sound("asssets/sounds/Background_sound.mp3")
         death_sound = pygame.mixer.Sound("asssets/sounds/hero_died.wav")
-        fire_sound = pygame.mixer.Sound("asssets/sounds/fire_attack.wav")     #fire from the ghots
-        coin_sound = pygame.mixer.Sound("asssets/sounds/coin_collect.wav")  # Coin sound
+        fire_sound = pygame.mixer.Sound("asssets/sounds/fire_attack.wav")
+        coin_sound = pygame.mixer.Sound("asssets/sounds/coin_collect.wav")
+        health_sound = pygame.mixer.Sound("asssets/sounds/health_collect.wav")
+        jump_sound = pygame.mixer.Sound("asssets/sounds/jump.wav")
     except:
         print("Warning: Sound files not found!")
         shoot_sound = None
@@ -39,17 +83,20 @@ def run_game():
         death_sound = None
         fire_sound = None
         coin_sound = None
+        health_sound = None
+        jump_sound = None
     
-    # Game variables - Hero fixed in position
     hero_x, hero_y = 180, 410
     hero_angle = 0
+    
     is_jumping = False
     jump_velocity = 0
-    jump_strength = -16
-    gravity = 0.9
+    jump_strength = -15
+    gravity = 0.6
     hero_base_y = 410
+    jump_count = 0
+    max_jumps = 2
     
-    # Create multiple enemies
     enemies = [
         Enemy(1000, 410, enemy_type="zombie"),
         Enemy(1200, random.randint(50, 250), enemy_type="ghost"),
@@ -58,45 +105,43 @@ def run_game():
     
     bullets = []
     ghost_fires = []
-    coins = []  # List to store coins
+    coins = []
+    health_kits = []
     shoot_cooldown = 0
     score = 0
     hero_health = 100
     coins_collected = 0
     TOTAL_COINS_TO_WIN = 67
     coin_spawn_timer = 0
-    COIN_SPAWN_RATE = 60 
+    COIN_SPAWN_RATE = 60
+    health_spawn_timer = 0
+    HEALTH_SPAWN_RATE = 300
     damage_per_frame = 100 / (2 * 60)
     game_over = False
     victory = False
     death_sound_played = False
     clock = pygame.time.Clock()
 
-    
     crosshair_size = 20
     crosshair_color = (255, 255, 255)
 
-   
     if background_music:
         background_music.play(-1)
         background_music.set_volume(0.2)
 
     while True:
         if not game_over and not victory:
+            # Game running
             screen.blit(background, (0, 0))
             
-            # Get mouse position for aiming
             mouse_x, mouse_y = pygame.mouse.get_pos()
             
-            # Calculate angle between hero and mouse cursor
             dx = mouse_x - (hero_x + 50)
             dy = mouse_y - (hero_y + 50)
             
-            # Update hero angle based on mouse position
             if dx != 0 or dy != 0:
                 hero_angle = math.degrees(math.atan2(-dy, dx))
             
-            # Rotate hero image
             rotated_hero = pygame.transform.rotate(hero_original, hero_angle)
             rotated_rect = rotated_hero.get_rect(center=(hero_x + 50, hero_y + 50))
             
@@ -107,7 +152,15 @@ def run_game():
                     pygame.quit()
                     sys.exit()
                 
-                # Shooting with mouse click
+                # Jump on key press
+                if event.type == pygame.KEYDOWN:
+                    if (event.key == pygame.K_UP or event.key == pygame.K_w) and jump_count < max_jumps:
+                        is_jumping = True
+                        jump_velocity = jump_strength
+                        jump_count += 1
+                        if jump_sound:
+                            jump_sound.play()
+                
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and shoot_cooldown == 0:
                     bullet_angle = math.radians(hero_angle)
                     
@@ -126,7 +179,6 @@ def run_game():
                     if shoot_sound:
                         shoot_sound.play()
 
-            # Shooting Controls with spacebar
             keys = pygame.key.get_pressed()
             if keys[pygame.K_SPACE] and shoot_cooldown == 0:
                 bullet_angle = math.radians(hero_angle)
@@ -146,12 +198,6 @@ def run_game():
                 if shoot_sound:
                     shoot_sound.play()
             
-            # Jump Controls
-            if keys[pygame.K_UP] or keys[pygame.K_w]:
-                if not is_jumping and hero_y >= hero_base_y:
-                    is_jumping = True
-                    jump_velocity = jump_strength
-            
             # Update jump physics
             if is_jumping:
                 hero_y += jump_velocity
@@ -161,33 +207,37 @@ def run_game():
             if hero_y >= hero_base_y:
                 hero_y = hero_base_y
                 is_jumping = False
-                jump_velocity = 0       
-                
+                jump_velocity = 0
+                jump_count = 0
+            
             if shoot_cooldown > 0: 
                 shoot_cooldown -= 1
 
-            # Spawn coins continuously (from right side, like enemies)
+            # Spawn coins
             coin_spawn_timer += 1
             if coin_spawn_timer >= COIN_SPAWN_RATE:
                 coin_spawn_timer = 0
-                # Spawn coin at random Y position on right side
-                coin_y = random.randint(100, 500)  # Avoid top and bottom edges
+                coin_y = random.randint(100, 500)
                 coins.append(Coin(WIDTH + 20, coin_y))
+            
+            # Spawn health kits
+            health_spawn_timer += 1
+            if health_spawn_timer >= HEALTH_SPAWN_RATE:
+                health_spawn_timer = 0
+                health_y = random.randint(100, 500)
+                health_kits.append(Health(WIDTH + 20, health_y))
             
             # Update coins
             for coin in coins[:]:
                 coin.update()
                 
-                # Move coin from right to left (like enemies)
                 if not coin.collected:
-                    coin.x -= 5  # Same speed as zombies
+                    coin.x -= 5
                 
-                # Remove if off screen (left side)
                 if coin.is_off_screen(WIDTH):
                     coins.remove(coin)
                     continue
                 
-                # Check collision with hero
                 hero_rect = pygame.Rect(hero_x + 20, hero_y, 60, 100)
                 if not coin.collected and coin.get_rect().colliderect(hero_rect):
                     coin.collect()
@@ -195,29 +245,41 @@ def run_game():
                     if coin_sound:
                         coin_sound.play()
                     
-                    # Check win condition
                     if coins_collected >= TOTAL_COINS_TO_WIN:
                         victory = True
                         if background_music:
-                            background_music.set_volume(0.1)  # Lower volume for victory
+                            background_music.set_volume(0.1)
             
-            # Update enemies and check for attacks
+            # Update health kits
+            for health_kit in health_kits[:]:
+                health_kit.update()
+                
+                if health_kit.x < -50:
+                    health_kits.remove(health_kit)
+                    continue
+                
+                hero_rect = pygame.Rect(hero_x + 20, hero_y, 60, 100)
+                if not health_kit.collected and health_kit.get_rect().colliderect(hero_rect):
+                    heal_amount = health_kit.collect()
+                    hero_health = min(100, hero_health + heal_amount)
+                    health_kits.remove(health_kit)
+                    if health_sound:
+                        health_sound.play()
+            
+            # Update enemies
             any_attacking = False
             for enemy in enemies:
                 enemy_rect = enemy.get_rect()
                 hero_rect = pygame.Rect(hero_x + 20, hero_y, 60, 100)
                 
-                # Check if enemy touches hero
                 if enemy.enemy_type=="zombie" and enemy_rect.colliderect(hero_rect):
                     enemy.is_attacking = True
                     any_attacking = True
                 else:
                     enemy.is_attacking = False
                 
-                # Update enemy and check if ghost wants to shoot fire
                 shoot_signal = enemy.update(hero_rect, hero_x + 50, hero_y + 50)
                 
-                # If ghost wants to shoot fire
                 if shoot_signal == "shoot_fire" and enemy.enemy_type == "ghost":
                     ghost_fires.append(GhostFire(
                         enemy.x + 40,
@@ -228,7 +290,6 @@ def run_game():
                     if fire_sound:
                         fire_sound.play()
 
-            # Apply damage if any enemy is attacking (touching hero)
             if any_attacking:
                 hero_health -= damage_per_frame
                 if hero_health <= 0:
@@ -239,16 +300,14 @@ def run_game():
                         death_sound.play()
                         death_sound_played = True
 
-            # Update ghost fires and check collisions
+            # Update ghost fires
             for fire in ghost_fires[:]:
                 fire.update()
                 
-                # Remove if off screen
                 if fire.is_off_screen(WIDTH, HEIGHT):
                     ghost_fires.remove(fire)
                     continue
                 
-                # Check collision with hero
                 hero_rect = pygame.Rect(hero_x + 20, hero_y, 60, 100)
                 if fire.get_rect().colliderect(hero_rect):
                     ghost_fires.remove(fire)
@@ -261,17 +320,15 @@ def run_game():
                             death_sound.play()
                             death_sound_played = True
 
-            # Update bullets and check collisions with enemies
+            # Update bullets
             for bullet in bullets[:]:
                 bullet.update()
                 
-                # Remove if off screen
                 if (bullet.x < -20 or bullet.x > WIDTH + 20 or 
                     bullet.y < -20 or bullet.y > HEIGHT + 20):
                     bullets.remove(bullet)
                     continue
                 
-                # Check collision with enemies
                 bullet_hit = False
                 for enemy in enemies:
                     if bullet.get_rect().colliderect(enemy.get_rect()):
@@ -287,26 +344,24 @@ def run_game():
                         break
 
             # Draw Everything
-            # Draw coins first (so they appear behind enemies)
             for coin in coins:
                 coin.draw(screen)
             
-            # Draw ghost fires
+            for health_kit in health_kits:
+                health_kit.draw(screen)
+            
             for fire in ghost_fires:
                 fire.draw(screen)
             
-            # Draw enemies
             for enemy in enemies:
                 enemy.draw(screen)
             
-            # Draw bullets
             for bullet in bullets:
                 bullet.draw(screen)
             
-            # Draw hero (rotated)
             screen.blit(rotated_hero, rotated_rect.topleft)
             
-            # Draw crosshair at mouse position
+            # Draw crosshair
             pygame.draw.line(screen, crosshair_color, 
                            (mouse_x - crosshair_size, mouse_y), 
                            (mouse_x + crosshair_size, mouse_y), 2)
@@ -316,65 +371,116 @@ def run_game():
             pygame.draw.circle(screen, crosshair_color, (mouse_x, mouse_y), 3, 2)
 
             # UI Rendering
-            score_text = font.render(f"SCORE: {score}", True, (255, 255, 255))
-            screen.blit(score_text, (20, 20))
+            pygame.draw.rect(screen, (30, 30, 30, 180), (10, 10, 250, 100), border_radius=10)
+            pygame.draw.rect(screen, (60, 60, 60), (10, 10, 250, 100), 2, border_radius=10)
             
-            # Coin counter (most important!)
-            coins_text = font.render(f"COINS: {coins_collected}/{TOTAL_COINS_TO_WIN}", True, (255, 215, 0))
-            screen.blit(coins_text, (WIDTH // 2 - 100, 20))
+            score_icon = normal_font.render("★", True, (255, 215, 0))
+            screen.blit(score_icon, (20, 20))
+            score_text = normal_font.render(f"{score}", True, (255, 255, 255))
+            screen.blit(score_text, (45, 20))
             
-            # Coin progress bar
-            coin_progress_width = 200
-            coin_progress = min(coins_collected / TOTAL_COINS_TO_WIN, 1.0)
-            pygame.draw.rect(screen, (100, 100, 100), (WIDTH // 2 - 100, 50, coin_progress_width, 8))
-            pygame.draw.rect(screen, (255, 215, 0), (WIDTH // 2 - 100, 50, coin_progress_width * coin_progress, 8))
+            coin_icon = normal_font.render("$", True, (255, 215, 0))
+            screen.blit(coin_icon, (20, 50))
+            coins_text = normal_font.render(f"{coins_collected}/{TOTAL_COINS_TO_WIN}", True, (255, 215, 0))
+            screen.blit(coins_text, (45, 50))
+            
+            pygame.draw.rect(screen, (30, 30, 30, 180), (WIDTH - 230, 10, 220, 90), border_radius=10)
+            pygame.draw.rect(screen, (60, 60, 60), (WIDTH - 230, 10, 220, 90), 2, border_radius=10)
+            
+            health_icon = normal_font.render("❤", True, (255, 50, 50))
+            screen.blit(health_icon, (WIDTH - 220, 20))
+            health_text = normal_font.render(f"{int(hero_health)}%", True, (0, 255, 0))
+            screen.blit(health_text, (WIDTH - 190, 20))
+            
+            pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 220, 50, 200, 15), border_radius=5)
+            pygame.draw.rect(screen, (0, 255, 0), (WIDTH - 220, 50, 2 * hero_health, 15), border_radius=5)
+            pygame.draw.rect(screen, (100, 100, 100), (WIDTH - 220, 50, 200, 15), 2, border_radius=5)
+            
+            jumps_icon = normal_font.render("↑", True, (100, 200, 255))
+            screen.blit(jumps_icon, (WIDTH - 220, 70))
+            jumps_left = max_jumps - jump_count
+            jump_text = normal_font.render(f"x{jumps_left}", True, (100, 200, 255))
+            screen.blit(jump_text, (WIDTH - 190, 70))
             
             # Enemy counter
             zombie_count = sum(1 for e in enemies if e.enemy_type == "zombie" and e.health > 0)
             ghost_count = sum(1 for e in enemies if e.enemy_type == "ghost" and e.health > 0)
-            enemy_text = font.render(f"Zombies: {zombie_count} | Ghosts: {ghost_count}", True, (200, 200, 255))
-            screen.blit(enemy_text, (20, 60))
             
-            # Points info
-            points_info = font.render("Zombie: 1 | Ghost: 6", True, (255, 255, 0))
-            screen.blit(points_info, (WIDTH - 200, 60))
+            enemy_panel = pygame.Surface((200, 40), pygame.SRCALPHA)
+            enemy_panel.fill((30, 30, 30, 180))
+            pygame.draw.rect(enemy_panel, (60, 60, 60), (0, 0, 200, 40), 2)
+            screen.blit(enemy_panel, (WIDTH // 2 - 100, 10))
             
-            # Health Bar (Top Right)
-            pygame.draw.rect(screen, (255, 255, 255), (WIDTH - 220, 20, 200, 25), 2)
-            pygame.draw.rect(screen, (0, 255, 0), (WIDTH - 220, 20, 2 * hero_health, 25))
+            zombie_text = ui_font.render(f"Z: {zombie_count}", True, (255, 100, 100))
+            ghost_text = ui_font.render(f"G: {ghost_count}", True, (100, 200, 255))
+            screen.blit(zombie_text, (WIDTH // 2 - 80, 20))
+            screen.blit(ghost_text, (WIDTH // 2 + 20, 20))
             
-            # Health text
-            health_text = font.render(f"HEALTH: {int(hero_health)}%", True, (0, 255, 0))
-            screen.blit(health_text, (WIDTH - 220, 50))
-            
-            # Fire warning if any fireballs are active
             if ghost_fires:
-                warning = font.render("FIRE INCOMING!", True, (255, 100, 0))
-                screen.blit(warning, (WIDTH//2 - warning.get_width()//2, 100))
+                warning_bg = pygame.Surface((250, 40), pygame.SRCALPHA)
+                warning_bg.fill((255, 50, 0, 150))
+                pygame.draw.rect(warning_bg, (255, 100, 0), (0, 0, 250, 40), 3)
+                screen.blit(warning_bg, (WIDTH // 2 - 125, 100))
+                
+                warning = normal_font.render("FIRE INCOMING!", True, (255, 255, 200))
+                screen.blit(warning, (WIDTH // 2 - warning.get_width() // 2, 110))
             
-            # Instructions
-            instructions = font.render("Aim: Mouse | Shoot: Space/L-Click | Jump: UP/W", 
-                                      True, (200, 200, 200))
-            screen.blit(instructions, (WIDTH//2 - 200, HEIGHT - 40))
+            instructions_bg = pygame.Surface((600, 40), pygame.SRCALPHA)
+            instructions_bg.fill((0, 0, 0, 150))
+            screen.blit(instructions_bg, (WIDTH // 2 - 300, HEIGHT - 50))
+            
+            instructions = small_font.render("AIM: MOUSE  |  SHOOT: SPACE/L-CLICK  |  JUMP: W/UP (x2)", 
+                                           True, (200, 200, 200))
+            screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 40))
 
         elif victory:
-            # Victory Screen
-            screen.fill((20, 40, 20))  # Greenish background for victory
+            # VICTORY SCREEN - Full screen with large image and bold text
+            # Dark green background
+            screen.fill((10, 30, 20))
             
-            victory_text = font.render("VICTORY!", True, (0, 255, 0))
-            screen.blit(victory_text, (WIDTH//2 - 80, HEIGHT//2 - 100))
+            # Draw subtle pattern
+            for i in range(0, WIDTH, 40):
+                for j in range(0, HEIGHT, 40):
+                    pygame.draw.rect(screen, (20, 50, 30), (i, j, 20, 20))
             
-            coins_victory = font.render(f"You collected {coins_collected} coins!", True, (255, 215, 0))
-            screen.blit(coins_victory, (WIDTH//2 - 180, HEIGHT//2 - 50))
+            # Draw winner image CENTERED and LARGE
+            if hero_winner_img:
+                img_rect = hero_winner_img.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+                screen.blit(hero_winner_img, img_rect)
             
-            goal_text = font.render("Mission Accomplished!", True, (100, 255, 100))
-            screen.blit(goal_text, (WIDTH//2 - 150, HEIGHT//2))
+            # Draw victory text with shadow effect (BIG and BOLD)
+            victory_shadow = title_font.render("VICTORY!", True, (0, 80, 0))
+            victory_text = title_font.render("VICTORY!", True, (0, 255, 100))
             
-            final_score = font.render(f"Final Score: {score}", True, (255, 255, 0))
-            screen.blit(final_score, (WIDTH//2 - 120, HEIGHT//2 + 50))
+            # Center the text
+            shadow_pos = (WIDTH // 2 - victory_shadow.get_width() // 2 + 3, 
+                         HEIGHT - 180 + 3)
+            text_pos = (WIDTH // 2 - victory_text.get_width() // 2, 
+                       HEIGHT - 180)
             
-            restart_msg = font.render("Press 'R' to Play Again or 'Q' to Quit", True, (255, 255, 255))
-            screen.blit(restart_msg, (WIDTH//2 - 240, HEIGHT//2 + 100))
+            screen.blit(victory_shadow, shadow_pos)
+            screen.blit(victory_text, text_pos)
+            
+            # Draw stats with good spacing
+            coins_text = large_font.render(f"COINS: {coins_collected}", True, (255, 215, 0))
+            coins_pos = (WIDTH // 2 - coins_text.get_width() // 2, HEIGHT - 120)
+            screen.blit(coins_text, coins_pos)
+            
+            score_text = large_font.render(f"SCORE: {score}", True, (255, 255, 150))
+            score_pos = (WIDTH // 2 - score_text.get_width() // 2, HEIGHT - 80)
+            screen.blit(score_text, score_pos)
+            
+            # Instructions at bottom
+            restart_msg = normal_font.render("PRESS 'R' TO PLAY AGAIN  |  PRESS 'Q' TO QUIT", 
+                                           True, (200, 255, 200))
+            restart_pos = (WIDTH // 2 - restart_msg.get_width() // 2, HEIGHT - 30)
+            screen.blit(restart_msg, restart_pos)
+            
+            # Draw celebration particles (optional visual effect)
+            for i in range(20):
+                x = random.randint(0, WIDTH)
+                y = random.randint(0, HEIGHT // 2)
+                pygame.draw.circle(screen, (255, 215, 0), (x, y), 3)
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -393,19 +499,54 @@ def run_game():
                         sys.exit()
 
         else:
-            # Game Over Screen
-            screen.fill((20, 20, 20))
-            msg = font.render("GAME OVER", True, (255, 50, 50))
-            screen.blit(msg, (WIDTH//2 - 100, HEIGHT//2 - 50))
+            # GAME OVER SCREEN - Full screen with large image and bold text
+            # Dark red background
+            screen.fill((30, 10, 10))
             
-            coins_final = font.render(f"Coins: {coins_collected}/{TOTAL_COINS_TO_WIN}", True, (255, 215, 0))
-            screen.blit(coins_final, (WIDTH//2 - 120, HEIGHT//2))
+            # Draw subtle pattern
+            for i in range(0, WIDTH, 40):
+                for j in range(0, HEIGHT, 40):
+                    pygame.draw.rect(screen, (50, 20, 20), (i, j, 20, 20))
             
-            final_score = font.render(f"Final Score: {score}", True, (255, 255, 0))
-            screen.blit(final_score, (WIDTH//2 - 120, HEIGHT//2 + 50))
+            # Draw dead image CENTERED and LARGE
+            if hero_dead_img:
+                img_rect = hero_dead_img.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+                screen.blit(hero_dead_img, img_rect)
             
-            restart_msg = font.render("Press 'R' to Restart or 'Q' to Quit", True, (255, 255, 255))
-            screen.blit(restart_msg, (WIDTH//2 - 220, HEIGHT//2 + 100))
+            # Draw game over text with shadow effect (BIG and BOLD)
+            gameover_shadow = title_font.render("GAME OVER", True, (80, 0, 0))
+            gameover_text = title_font.render("GAME OVER", True, (255, 50, 50))
+            
+            # Center the text
+            shadow_pos = (WIDTH // 2 - gameover_shadow.get_width() // 2 + 3, 
+                         HEIGHT - 180 + 3)
+            text_pos = (WIDTH // 2 - gameover_text.get_width() // 2, 
+                       HEIGHT - 180)
+            
+            screen.blit(gameover_shadow, shadow_pos)
+            screen.blit(gameover_text, text_pos)
+            
+            # Draw stats with good spacing
+            coins_text = large_font.render(f"COINS: {coins_collected}/{TOTAL_COINS_TO_WIN}", 
+                                         True, (255, 215, 0))
+            coins_pos = (WIDTH // 2 - coins_text.get_width() // 2, HEIGHT - 120)
+            screen.blit(coins_text, coins_pos)
+            
+            score_text = large_font.render(f"SCORE: {score}", True, (255, 200, 100))
+            score_pos = (WIDTH // 2 - score_text.get_width() // 2, HEIGHT - 80)
+            screen.blit(score_text, score_pos)
+            
+            # Instructions at bottom
+            restart_msg = normal_font.render("PRESS 'R' TO RESTART  |  PRESS 'Q' TO QUIT", 
+                                           True, (255, 200, 200))
+            restart_pos = (WIDTH // 2 - restart_msg.get_width() // 2, HEIGHT - 30)
+            screen.blit(restart_msg, restart_pos)
+            
+            # Draw some visual effects
+            for i in range(15):
+                x = random.randint(0, WIDTH)
+                y = random.randint(0, HEIGHT // 2)
+                pygame.draw.circle(screen, (255, 50, 50), (x, y), 2)
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
