@@ -8,6 +8,54 @@ from ghost_fire import GhostFire
 from coins import Coin
 from health import Health
 
+
+# Simple floating score popup
+class ScorePopup:
+    def __init__(self, x, y, text, font, color=(255, 215, 0)):
+        self.x = x
+        self.y = y
+        self.text = text
+        self.font = font
+        self.color = color
+        self.vy = -1.5
+        self.life = 60
+
+    def update(self):
+        self.y += self.vy
+        self.vy *= 0.98
+        self.life -= 1
+
+    def draw(self, screen):
+        alpha = max(0, int(255 * (self.life / 60)))
+        surf = self.font.render(self.text, True, self.color)
+        surf.set_alpha(alpha)
+        screen.blit(surf, (self.x - surf.get_width() // 2, self.y - surf.get_height() // 2))
+
+
+# Small upward star particle for ghost-kill effect
+class StarParticle:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.vx = random.uniform(-1.2, 1.2)
+        self.vy = random.uniform(-4.0, -1.5)
+        self.life = random.randint(30, 50)
+        self.size = random.randint(2, 4)
+        self.color = (255, 235, 180)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += 0.12
+        self.life -= 1
+
+    def draw(self, screen):
+        alpha = max(0, int(255 * (self.life / 50)))
+        col = (*self.color[:3], alpha)
+        s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, col, (self.size, self.size), self.size)
+        screen.blit(s, (int(self.x - self.size), int(self.y - self.size)))
+
 def run_game():
     pygame.init()
     WIDTH, HEIGHT = 800, 600
@@ -105,6 +153,8 @@ def run_game():
     
     bullets = []
     ghost_fires = []
+    popups = []
+    star_particles = []
     coins = []
     health_kits = []
     shoot_cooldown = 0
@@ -335,11 +385,21 @@ def run_game():
                         bullets.remove(bullet)
                         enemy.health -= 1
                         if enemy.health <= 0:
-                            enemy.reset()
+                            # capture death position and score value before reset
+                            death_x, death_y = enemy.x + 30, enemy.y + 20
+                            value = enemy.score_value
+                            # spawn floating score popup
+                            popups.append(ScorePopup(death_x, death_y, f"+{value}", normal_font))
+                            # spawn nice star particles for ghosts
                             if enemy.enemy_type == "ghost":
+                                for i in range(7):
+                                    star_particles.append(StarParticle(death_x + random.uniform(-10, 10), death_y + random.uniform(-6, 6)))
                                 score += 6
                             else:
                                 score += 1
+                            # print to console as well
+                            print(f"Got +{value} points!")
+                            enemy.reset()
                         bullet_hit = True
                         break
 
@@ -356,6 +416,20 @@ def run_game():
             for enemy in enemies:
                 enemy.draw(screen)
             
+            # Update and draw score popups
+            for popup in popups[:]:
+                popup.update()
+                popup.draw(screen)
+                if popup.life <= 0:
+                    popups.remove(popup)
+
+            # Update and draw star particles
+            for sp in star_particles[:]:
+                sp.update()
+                sp.draw(screen)
+                if sp.life <= 0:
+                    star_particles.remove(sp)
+
             for bullet in bullets:
                 bullet.draw(screen)
             

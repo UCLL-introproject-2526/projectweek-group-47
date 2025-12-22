@@ -273,9 +273,7 @@ class Enemy:
         pygame.draw.rect(screen, (0, 255, 0), (health_bar_x, self.y - 10, bar_width * health_ratio, 5))
         pygame.draw.rect(screen, (255, 255, 255), (health_bar_x, self.y - 10, bar_width, 5), 1)
         
-        score_font = pygame.font.SysFont('Arial', 12, bold=True)
-        score_text = score_font.render(f"+{self.score_value}", True, (255, 255, 0))
-        screen.blit(score_text, (self.x + 20, self.y - 25))
+        # Score popup handled centrally in main when an enemy dies
         
         if self.enemy_type == "ghost" and self.can_shoot_fire:
             fire_radius = 4
